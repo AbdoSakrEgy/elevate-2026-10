@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Session 2 — Streams &amp; Workers · Which approach wins?</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --bg2: #0e1730;
+    --panel: #16203a;
+    --codebg: #0b1019;
+    --accent: #22d3ee;
+    --accent2: #fbbf24;
+    --good: #34d399;
+    --bad: #fb7185;
+    --text: #eef2f9;
+    --muted: #94a3b8;
+    --line: #2b3855;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(1200px 800px at 80% -10%, #16223f 0%, var(--bg) 55%);
+    color: var(--text);
+    overflow: hidden;
+  }
+  .deck { height: 100vh; width: 100vw; position: relative; }
+  .slide {
+    position: absolute; inset: 0;
+    display: none;
+    padding: 6vh 7vw;
+    flex-direction: column;
+    justify-content: center;
+    overflow: auto;
+    animation: fade .4s ease;
+  }
+  .slide.active { display: flex; }
+  @keyframes fade { from { opacity: 0; transform: translateY(14px);} to { opacity: 1; transform: none; } }
+
+  h1 { font-size: 3.6rem; line-height: 1.06; margin-bottom: 1rem; letter-spacing: -0.02em; }
+  h1 .hl { color: var(--accent); }
+  h2 { font-size: 2.2rem; margin-bottom: .9rem; letter-spacing: -0.01em; }
+  h2 .kicker { display: block; font-size: .9rem; text-transform: uppercase; letter-spacing: .14em; color: var(--accent); margin-bottom: .45rem; font-weight: 700; }
+  .subtitle { font-size: 1.35rem; color: var(--muted); font-weight: 400; max-width: 52ch; }
+
+  .qtext { font-size: 1.45rem; font-weight: 600; margin-bottom: 1.1rem; line-height: 1.35; }
+  .qtext .ask { color: var(--accent2); }
+
+  .codes { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; margin: .4rem 0 .9rem; }
+  .code { background: var(--codebg); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+  .code .lang { padding: .5rem 1rem; font-weight: 700; font-size: .95rem; background: #121a2a; border-bottom: 1px solid var(--line); }
+  .code.a .lang { color: var(--accent2); }
+  .code.b .lang { color: var(--accent); }
+  .code pre { padding: .95rem 1.1rem; overflow: auto; margin: 0; }
+  .code code { font-family: "SF Mono", "Fira Code", "JetBrains Mono", Consolas, monospace; font-size: .9rem; line-height: 1.6; color: #e6edf3; white-space: pre; }
+
+  /* syntax highlighting */
+  .tok-k { color: #c792ea; }
+  .tok-s { color: #a5e075; }
+  .tok-n { color: #f0a45c; }
+  .tok-c { color: #7d8590; font-style: italic; }
+
+  .prompt { color: var(--muted); font-size: 1.05rem; margin: .4rem 0 .6rem; }
+  .opts { display: flex; gap: 1rem; max-width: 560px; }
+  .opt {
+    flex: 1; text-align: center;
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    padding: .85rem 1rem; border-radius: 10px; font-size: 1.25rem; font-weight: 700;
+    cursor: pointer; transition: .15s; font-family: inherit;
+  }
+  .opt:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .opt.correct { background: rgba(52,211,153,.14); border-color: var(--good); color: var(--good); }
+  .opt.wrong { background: rgba(251,113,133,.14); border-color: var(--bad); color: var(--bad); }
+
+  .answer {
+    margin-top: 1rem; padding: 1rem 1.3rem;
+    background: rgba(34,211,238,.08); border-left: 3px solid var(--accent);
+    border-radius: 8px; font-size: 1.08rem; line-height: 1.55;
+    display: none; max-width: 860px;
+  }
+  .answer.show { display: block; animation: fade .3s ease; }
+  .answer b { color: var(--accent2); }
+  .answer code { font-family: "SF Mono", Consolas, monospace; font-size: .95em; color: #bfe3ff; background: rgba(255,255,255,.06); padding: .05em .35em; border-radius: 4px; }
+
+  .big-score { font-size: 2.6rem; font-weight: 800; margin-bottom: .6rem; }
+  .big-score span { color: var(--accent); }
+  ul.recap { list-style: none; margin-top: 1rem; }
+  ul.recap li { font-size: 1.15rem; line-height: 1.5; margin-bottom: .6rem; padding-left: 1.6rem; position: relative; }
+  ul.recap li::before { content: "→"; position: absolute; left: 0; color: var(--accent); font-weight: 700; }
+  ul.recap li b { color: var(--accent2); }
+
+  .nav { position: fixed; bottom: 1.5rem; right: 2rem; display: flex; align-items: center; gap: 1rem; color: var(--muted); font-size: .95rem; z-index: 20; }
+  .score { color: var(--accent2); font-weight: 700; letter-spacing: .04em; }
+  button.navbtn { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: .55rem 1rem; font-size: 1rem; cursor: pointer; }
+  button.navbtn:hover { border-color: var(--accent); color: var(--accent); }
+  .progress { letter-spacing: .1em; }
+
+  @media print {
+    body { overflow: visible; background: #fff; color: #111; }
+    .deck { height: auto; }
+    .slide { display: flex !important; position: relative; page-break-after: always; min-height: 100vh; color: #111; }
+    .nav { display: none; }
+    .answer { display: block !important; }
+  }
+  @media (max-width: 820px) {
+    .slide { padding: 5vh 5vw; }
+    h1 { font-size: 2.4rem; } h2 { font-size: 1.7rem; }
+    .qtext { font-size: 1.2rem; }
+    .codes { grid-template-columns: 1fr; }
+    .code code { font-size: .8rem; }
+  }
+</style>
+</head>
+<body>
+<div class="deck">
+
+  <!-- Title -->
+  <section class="slide active">
+    <h1>Session 2<br><span class="hl">Streams &amp; Workers</span></h1>
+    <p class="subtitle">Which approach wins? A code-comparison quiz on memory, speed, and the event loop.</p>
+    <p class="subtitle" style="margin-top:1rem; font-size:1.1rem;">12 questions · pick <b style="color:var(--accent2)">A</b> or <b style="color:var(--accent)">B</b> · your score is tracked as you go.</p>
+  </section>
+
+  <!-- How to play -->
+  <section class="slide">
+    <h2><span class="kicker">How it works</span>Read two snippets, pick the winner</h2>
+    <p class="subtitle" style="font-size:1.2rem;">Each slide shows two real code snippets from the session. Decide which is <b>faster</b>, <b>uses less memory</b>, or is simply <b>correct</b> — then click <b>A</b> or <b>B</b>.</p>
+    <ul class="recap" style="margin-top:1.4rem;">
+      <li><b>Streams</b> — read a huge file chunk-by-chunk, respect backpressure, keep the event loop free.</li>
+      <li><b>Workers</b> — offload CPU work, share memory instead of copying, reuse a pool.</li>
+    </ul>
+    <p class="subtitle" style="margin-top:1.4rem; font-size:1.05rem;">No trick questions — every answer maps to a line in the session code.</p>
+  </section>
+
+  <!-- Q1 -->
+  <section class="slide">
+    <h2><span class="kicker">Streams · Q1</span>Memory</h2>
+    <p class="qtext">You must process an 8&nbsp;GB NDJSON file. <span class="ask">Which keeps memory flat?</span></p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>const data = await readFile(path, "utf-8");
+const rows = data.split("\n").map((line) =&gt; JSON.parse(line));</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>const stream = createReadStream(path);
+const rl = readline.createInterface({ input: stream });
+for await (const line of rl) {
+  JSON.parse(line);
+}</code></pre></div>
+    </div>
+    <p class="prompt">Which is better? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="false">A</button>
+      <button class="opt" data-correct="true">B</button>
+    </div>
+    <div class="answer"><b>B — streaming.</b> A stream reads a chunk, processes it, and releases it, so memory stays flat no matter the file size. <b>readFile</b> loads the entire file into one string, then every parsed object — an 8&nbsp;GB file blows up RAM.</div>
+  </section>
+
+  <!-- Q2 -->
+  <section class="slide">
+    <h2><span class="kicker">Streams · Q2</span>Completion &amp; errors</h2>
+    <p class="qtext">Which prints <code>"done"</code> only after the file is fully written — <span class="ask">and handles errors correctly?</span></p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>createReadStream(input)
+  .pipe(createGzip())
+  .pipe(createWriteStream(output));
+console.log("done");</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>await pipeline(
+  createReadStream(input),
+  createGzip(),
+  createWriteStream(output),
+);
+console.log("done");</code></pre></div>
+    </div>
+    <p class="prompt">Which is better? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="false">A</button>
+      <button class="opt" data-correct="true">B</button>
+    </div>
+    <div class="answer"><b>B — pipeline.</b> <code>.pipe()</code> returns immediately, doesn't wait for the destination to finish, and doesn't propagate errors cleanly. <b>pipeline()</b> awaits full completion and destroys the whole chain on the first error.</div>
+  </section>
+
+  <!-- Q3 -->
+  <section class="slide">
+    <h2><span class="kicker">Streams · Q3</span>Backpressure</h2>
+    <p class="qtext">Writing 100M rows to disk — <span class="ask">which keeps memory flat?</span></p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>for (let i = 0; i &lt; 100_000_000; i++) {
+  stream.write(row);
+}</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>for (let i = 0; i &lt; 100_000_000; i++) {
+  if (!stream.write(row)) await once(stream, "drain");
+}</code></pre></div>
+    </div>
+    <p class="prompt">Which is better? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="false">A</button>
+      <button class="opt" data-correct="true">B</button>
+    </div>
+    <div class="answer"><b>B — respect backpressure.</b> <code>write()</code> returning <code>false</code> means the internal buffer is full. Waiting for <b>drain</b> lets the buffer empty before writing more; otherwise the write queue grows unbounded and memory climbs.</div>
+  </section>
+
+  <!-- Q4 -->
+  <section class="slide">
+    <h2><span class="kicker">Streams · Q4</span>CPU vs size</h2>
+    <p class="qtext"><span class="ask">Which finishes faster</span> (but produces a larger file)?</p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>createGzip({ level: 1 })</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>createGzip({ level: 9 })</code></pre></div>
+    </div>
+    <p class="prompt">Which is faster? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="true">A</button>
+      <button class="opt" data-correct="false">B</button>
+    </div>
+    <div class="answer"><b>A — level 1.</b> Lower gzip levels do less work (less CPU) but compress less, so the file is bigger. Level 9 maximizes compression at the cost of more CPU. It's a classic <b>CPU-vs-size</b> trade-off.</div>
+  </section>
+
+  <!-- Q5 -->
+  <section class="slide">
+    <h2><span class="kicker">Streams · Q5</span>Throughput</h2>
+    <p class="qtext">Building 100M NDJSON lines — <span class="ask">which is faster?</span></p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>const line = JSON.stringify(city) + "\n";</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>const line = `{"cityId":${city.cityId},"temperature":${city.temperature}}\n`;</code></pre></div>
+    </div>
+    <p class="prompt">Which is faster? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="false">A</button>
+      <button class="opt" data-correct="true">B</button>
+    </div>
+    <div class="answer"><b>B — template string.</b> <code>JSON.stringify</code> pays per-object reflection and escaping overhead. A template literal writes the exact bytes directly — the session's <code>generateHugeJson.ts</code> even notes it's "much faster than JSON.stringify per row".</div>
+  </section>
+
+  <!-- Q6 -->
+  <section class="slide">
+    <h2><span class="kicker">Streams · Q6</span>Cancellation</h2>
+    <p class="qtext"><span class="ask">Which actually cancels</span> a running pipeline?</p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>await Promise.all([
+  pipeline(read, gzip, write),
+  setTimeout(5000).then(() =&gt; { throw new Error("timeout"); }),
+]);</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>const ac = new AbortController();
+setTimeout(() =&gt; ac.abort(), 5000);
+await pipeline(read, gzip, write, { signal: ac.signal });</code></pre></div>
+    </div>
+    <p class="prompt">Which is better? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="false">A</button>
+      <button class="opt" data-correct="true">B</button>
+    </div>
+    <div class="answer"><b>B — AbortController.</b> A rejection inside <code>Promise.all</code> only rejects the <code>Promise.all</code> — the pipeline keeps running in the background. An <b>AbortController signal</b> passed to <code>pipeline</code> actually destroys the stream.</div>
+  </section>
+
+  <!-- Q7 (new) -->
+  <section class="slide">
+    <h2><span class="kicker">Streams · Q7</span>Event loop</h2>
+    <p class="qtext">Your server must stay responsive while reading a 2&nbsp;GB file. <span class="ask">Which keeps the event loop free?</span></p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>const data = readFileSync(path, "utf-8");
+processData(data);</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>const stream = createReadStream(path);
+for await (const chunk of stream) {
+  processChunk(chunk);
+}</code></pre></div>
+    </div>
+    <p class="prompt">Which is better? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="false">A</button>
+      <button class="opt" data-correct="true">B</button>
+    </div>
+    <div class="answer"><b>B — asynchronous streaming.</b> <code>readFileSync</code> blocks the event loop for the entire read, so no other request is handled. <code>createReadStream</code> reads in chunks and yields to the event loop between them, keeping the server responsive.</div>
+  </section>
+
+  <!-- Q8 (new) -->
+  <section class="slide">
+    <h2><span class="kicker">Streams · Q8</span>Decoding cost</h2>
+    <p class="qtext">Counting newline (0x0A) bytes in an 8&nbsp;GB file — <span class="ask">which avoids needless decoding?</span></p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>const src = createReadStream(path, { encoding: "utf-8" });
+for await (const chunk of src) {
+  countNewlines(chunk);
+}</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>const src = createReadStream(path);
+for await (const chunk of src) {
+  countNewlines(chunk);
+}</code></pre></div>
+    </div>
+    <p class="prompt">Which is better? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="false">A</button>
+      <button class="opt" data-correct="true">B</button>
+    </div>
+    <div class="answer"><b>B — default Buffers.</b> By default <code>createReadStream</code> emits raw <b>Buffer</b> chunks — count bytes directly, no decoding. Setting <code>encoding: "utf-8"</code> makes Node decode every chunk into a string (extra CPU + allocation) you don't need for byte-level work.</div>
+  </section>
+
+  <!-- Q9 (was workers Q7) -->
+  <section class="slide">
+    <h2><span class="kicker">Workers · Q9</span>Copy cost</h2>
+    <p class="qtext">Sending 1M city objects to a worker — <span class="ask">which avoids the expensive copy?</span></p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>const cities = citiesGen(1_000_000);
+worker.postMessage(cities);</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>const sab = new SharedArrayBuffer(1_000_000 * 4 * 8);
+const data = new Float64Array(sab);
+worker.postMessage(data);</code></pre></div>
+    </div>
+    <p class="prompt">Which is better? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="false">A</button>
+      <button class="opt" data-correct="true">B</button>
+    </div>
+    <div class="answer"><b>B — SharedArrayBuffer.</b> <code>postMessage</code> structured-clones by default, so 1M objects means 1M copies (CPU + memory). A <b>SharedArrayBuffer</b> lets both threads read the same bytes with zero copying.</div>
+  </section>
+
+  <!-- Q10 (was workers Q8) -->
+  <section class="slide">
+    <h2><span class="kicker">Workers · Q10</span>Share vs transfer</h2>
+    <p class="qtext">You're finished with the buffer on the main thread. <span class="ask">Which is cheaper</span> — and the receiver owns it?</p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>worker.postMessage(sab);</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>worker.postMessage(sab, [sab]);</code></pre></div>
+    </div>
+    <p class="prompt">Which is better here? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="false">A</button>
+      <button class="opt" data-correct="true">B</button>
+    </div>
+    <div class="answer"><b>B — transfer.</b> The <b>transferList</b> moves ownership with zero copy, but the sender can no longer use the buffer. Sharing keeps both sides able to read/write, at the cost of having to coordinate. "Transferring is not sharing."</div>
+  </section>
+
+  <!-- Q11 (was workers Q9) -->
+  <section class="slide">
+    <h2><span class="kicker">Workers · Q11</span>Startup cost</h2>
+    <p class="qtext">Handling many requests — <span class="ask">which avoids repeated worker startup cost?</span></p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>app.get("/mean", () =&gt; {
+  const w = new Worker(new URL("./worker.ts", import.meta.url));
+  w.postMessage(work);
+});</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>const pool = [new Worker(...), new Worker(...)];
+app.get("/mean", () =&gt; pool[next()].postMessage(work));</code></pre></div>
+    </div>
+    <p class="prompt">Which is better? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="false">A</button>
+      <button class="opt" data-correct="true">B</button>
+    </div>
+    <div class="answer"><b>B — a worker pool.</b> <code>new Worker()</code> per request pays thread startup and module load every single time. A pool creates workers once and reuses them across requests — "a worker pool is not optional at scale."</div>
+  </section>
+
+  <!-- Q12 (was workers Q10) -->
+  <section class="slide">
+    <h2><span class="kicker">Workers · Q12</span>Event loop</h2>
+    <p class="qtext">Computing the mean of 5M temperatures — <span class="ask">which keeps the event loop free</span> so <code>/health</code> stays fast?</p>
+    <div class="codes">
+      <div class="code a"><div class="lang">Option A</div><pre><code>app.get("/mean", (req, res) =&gt; {
+  const mean = cities.reduce((s, c) =&gt; s + c.temperature, 0) / cities.length;
+  res.json({ mean });
+});</code></pre></div>
+      <div class="code b"><div class="lang">Option B</div><pre><code>app.get("/mean", (req, res) =&gt; {
+  worker.postMessage([data, reqId]);
+  pending.set(reqId, (r) =&gt; res.json(r));
+});</code></pre></div>
+    </div>
+    <p class="prompt">Which is better? Pick A or B.</p>
+    <div class="opts">
+      <button class="opt" data-correct="false">A</button>
+      <button class="opt" data-correct="true">B</button>
+    </div>
+    <div class="answer"><b>B — offload to the worker.</b> A long reduce on the main thread blocks the event loop, so <code>/health</code> and every other request wait. Offloading keeps the main thread free to answer immediately.</div>
+  </section>
+
+  <!-- Results -->
+  <section class="slide">
+    <h2><span class="kicker">Results</span>How did you do?</h2>
+    <p class="big-score">You got <span id="finalCorrect">0</span> / 12 correct</p>
+    <p class="subtitle" id="finalMsg" style="font-size:1.15rem;">Answer the questions to see your score.</p>
+    <ul class="recap" style="margin-top:1.4rem;">
+      <li><b>Stream</b> in chunks — backpressure keeps memory flat; <b>pipeline</b> finishes properly.</li>
+      <li><b>Keep the event loop free</b> — async streaming, no sync reads, no wasted decoding.</li>
+      <li><b>Workers</b> — share or transfer memory instead of cloning a million objects.</li>
+      <li><b>Reuse a pool</b> so CPU work never blocks the main thread.</li>
+    </ul>
+  </section>
+
+</div>
+
+<div class="nav">
+  <span class="score" id="score">0 / 0</span>
+  <button class="navbtn" id="prev" aria-label="Previous">← Prev</button>
+  <span class="progress" id="progress">1 / 15</span>
+  <button class="navbtn" id="next" aria-label="Next">Next →</button>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const progress = document.getElementById('progress');
+  const scoreEl = document.getElementById('score');
+  const total = slides.length;
+  let i = 0;
+  let correct = 0, answered = 0;
+
+  function show(n) {
+    i = (n + total) % total;
+    slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+    progress.textContent = (i + 1) + ' / ' + total;
+  }
+  document.getElementById('next').addEventListener('click', () => show(i + 1));
+  document.getElementById('prev').addEventListener('click', () => show(i - 1));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); show(i + 1); }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') show(i - 1);
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End') show(total - 1);
+  });
+
+  function updateScore() {
+    scoreEl.textContent = correct + ' / ' + answered;
+    document.getElementById('finalCorrect').textContent = correct;
+    const msg = document.getElementById('finalMsg');
+    if (answered === 0) {
+      msg.textContent = 'Answer the questions to see your score.';
+    } else {
+      const pct = correct / 12;
+      msg.textContent = (pct >= 0.9 ? 'Outstanding — streams and workers are locked in. 🎯'
+        : pct >= 0.7 ? 'Solid. Revisit the one or two you missed.'
+        : pct >= 0.5 ? 'Good start — brush up on backpressure and SharedArrayBuffer.'
+        : 'Review the session — the key ideas are flat memory and a free event loop.');
+    }
+  }
+
+  document.querySelectorAll('.slide .opts').forEach(opts => {
+    const slide = opts.closest('.slide');
+    const answer = slide.querySelector('.answer');
+    let done = false;
+    opts.querySelectorAll('.opt').forEach(btn => btn.addEventListener('click', () => {
+      if (done) return;
+      done = true;
+      const isCorrect = btn.dataset.correct === 'true';
+      btn.classList.add(isCorrect ? 'correct' : 'wrong');
+      opts.querySelectorAll('.opt').forEach(o => { if (o.dataset.correct === 'true') o.classList.add('correct'); });
+      if (answer) answer.classList.add('show');
+      if (isCorrect) correct++;
+      answered++;
+      updateScore();
+    }));
+  });
+
+  // Syntax highlighting (runs on the code panels only)
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  const TOKEN_RE = /(\/\/[^\n]*)|("[^"\n]*"|'[^'\n]*'|`[^`\n]*`)|\b(const|let|var|await|async|for|of|in|if|else|new|return|function|class|throw|import|from|export|type|interface|true|false|null|undefined|this)\b|\b(\d[\w]*(?:\.\d+)?)\b/g;
+  function highlight(src) {
+    let html = '';
+    let last = 0, m;
+    TOKEN_RE.lastIndex = 0;
+    while ((m = TOKEN_RE.exec(src)) !== null) {
+      html += escapeHtml(src.slice(last, m.index));
+      if (m[1])      html += '<span class="tok-c">' + escapeHtml(m[1]) + '</span>';
+      else if (m[2]) html += '<span class="tok-s">' + escapeHtml(m[2]) + '</span>';
+      else if (m[3]) html += '<span class="tok-k">' + escapeHtml(m[3]) + '</span>';
+      else           html += '<span class="tok-n">' + escapeHtml(m[4]) + '</span>';
+      last = m.index + m[0].length;
+    }
+    html += escapeHtml(src.slice(last));
+    return html;
+  }
+  document.querySelectorAll('pre code').forEach(el => {
+    el.innerHTML = highlight(el.textContent);
+  });
+</script>
+</body>
+</html>
